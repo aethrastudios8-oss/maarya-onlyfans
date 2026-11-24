@@ -1,0 +1,31 @@
+{
+  "firestore": [
+    {
+      "database": "ai-studio-android-maarya-99a25e26-86c9-402a-ab46-491cf1321666",
+      "rules": "firestore.rules"
+    }
+  ],
+  "hosting": {
+    "public": "web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  },
+  "emulators": {
+    "firestore": {
+      "host": "127.0.0.1",
+      "port": 8085
+    },
+    "ui": {
+      "enabled": false
+    }
+  }
+}

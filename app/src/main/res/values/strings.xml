@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">Maarya</string>
+    <string name="creator_name">Maarya</string>
+    <string name="creator_handle">\@maarya</string>
+    <string name="sign_in_cta">Continue with Google</string>
+    <string name="nav_feed">Feed</string>
+    <string name="nav_memberships">Club</string>
+    <string name="nav_messages">Messages</string>
+    <string name="nav_studio">Studio</string>
+    <string name="nav_account">Account</string>
+</resources>

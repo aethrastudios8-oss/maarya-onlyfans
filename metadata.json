@@ -1,0 +1,6 @@
+{
+  "name": "Maarya",
+  "description": "Exclusive personal creator membership and subscription app for Maarya.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

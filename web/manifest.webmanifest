@@ -1,0 +1,26 @@
+{
+  "id": "/index.html",
+  "name": "MAARYA ONLYFANS",
+  "short_name": "Maarya",
+  "description": "Exclusive single-creator private fan subscription club by Maarya (@maarya).",
+  "start_url": "/index.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#060409",
+  "theme_color": "#FF4D9D",
+  "icons": [
+    {
+      "src": "/assets/maarya_portrait.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/maarya_portrait.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

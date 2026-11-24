@@ -1,0 +1,295 @@
+{
+  "entities": {
+    "CreatorProfile": {
+      "title": "CreatorProfile",
+      "description": "Maarya's official single-creator public profile metadata.",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string" },
+        "handle": { "type": "string" },
+        "tagline": { "type": "string" },
+        "bio": { "type": "string" },
+        "location": { "type": "string" },
+        "verified": { "type": "boolean" },
+        "subscriberCount": { "type": "integer" },
+        "postCount": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["displayName", "handle", "tagline", "bio", "location", "verified", "subscriberCount", "postCount", "updatedAt"]
+    },
+    "MembershipTier": {
+      "title": "MembershipTier",
+      "description": "Maarya's four monthly subscription tiers ($50, $100, $200, $500).",
+      "type": "object",
+      "properties": {
+        "creatorHandle": { "type": "string" },
+        "name": { "type": "string" },
+        "rank": { "type": "integer" },
+        "priceMonthlyCents": { "type": "integer" },
+        "badgeLabel": { "type": "string" },
+        "description": { "type": "string" },
+        "perks": { "type": "array" },
+        "active": { "type": "boolean" },
+        "playProductId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["creatorHandle", "name", "rank", "priceMonthlyCents", "badgeLabel", "description", "perks", "active", "createdAt", "updatedAt"]
+    },
+    "CreatorPost": {
+      "title": "CreatorPost",
+      "description": "Exclusive photo, video, or update metadata published by Maarya.",
+      "type": "object",
+      "properties": {
+        "creatorHandle": { "type": "string" },
+        "authorId": { "type": "string" },
+        "title": { "type": "string" },
+        "caption": { "type": "string" },
+        "mediaType": { "type": "string", "enum": ["PHOTO", "VIDEO", "NOTE"] },
+        "mediaKey": { "type": "string" },
+        "mediaUri": { "type": "string" },
+        "requiredTierRank": { "type": "integer" },
+        "requiredTierName": { "type": "string" },
+        "ppvPriceCents": { "type": "integer" },
+        "likesCount": { "type": "integer" },
+        "commentsCount": { "type": "integer" },
+        "published": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["creatorHandle", "authorId", "title", "caption", "mediaType", "mediaKey", "requiredTierRank", "requiredTierName", "ppvPriceCents", "likesCount", "commentsCount", "published", "createdAt", "updatedAt"]
+    },
+    "ProtectedPostPayload": {
+      "title": "ProtectedPostPayload",
+      "description": "Subscriber-gated full editorial content and private media URLs.",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string" },
+        "requiredTierRank": { "type": "integer" },
+        "fullCaption": { "type": "string" },
+        "privateMediaUrl": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["postId", "requiredTierRank", "fullCaption", "updatedAt"]
+    },
+    "PostLike": {
+      "title": "PostLike",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "createdAt"]
+    },
+    "PostComment": {
+      "title": "PostComment",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string" },
+        "userId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorTierBadge": { "type": "string" },
+        "body": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["postId", "userId", "authorName", "authorTierBadge", "body", "createdAt"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "photoUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "displayName", "email", "createdAt", "updatedAt"]
+    },
+    "UnlockedPost": {
+      "title": "UnlockedPost",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "postId": { "type": "string" },
+        "amountCents": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "postId", "amountCents", "createdAt"]
+    },
+    "Subscription": {
+      "title": "Subscription",
+      "description": "Verified active/paused/cancelled membership granted via server webhook, Play Billing verification, or Maarya Admin.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "fanName": { "type": "string" },
+        "fanEmail": { "type": "string" },
+        "tierId": { "type": "string" },
+        "tierName": { "type": "string" },
+        "tierRank": { "type": "integer" },
+        "monthlyPriceCents": { "type": "integer" },
+        "status": { "type": "string", "enum": ["ACTIVE", "CANCELLED", "PAUSED"] },
+        "autoRenew": { "type": "boolean" },
+        "renewsAtLabel": { "type": "string" },
+        "paymentMethod": { "type": "string", "enum": ["VISA_CARD", "PAYONEER", "JAZZCASH", "GOOGLE_PLAY", "ADMIN_GRANT"] },
+        "paymentLabel": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "fanName", "fanEmail", "tierId", "tierName", "tierRank", "monthlyPriceCents", "status", "autoRenew", "renewsAtLabel", "paymentMethod", "paymentLabel", "createdAt", "updatedAt"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Verified ledger entry with gross amount, provider fees, net creator earnings, and provider label.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "fanName": { "type": "string" },
+        "type": { "type": "string", "enum": ["SUBSCRIPTION", "UPGRADE", "TIP", "UNLOCK"] },
+        "tierName": { "type": "string" },
+        "amountCents": { "type": "integer" },
+        "feeCents": { "type": "integer" },
+        "netEarningsCents": { "type": "integer" },
+        "status": { "type": "string", "enum": ["SUCCEEDED", "PENDING_VERIFICATION", "REFUNDED"] },
+        "paymentMethod": { "type": "string", "enum": ["VISA_CARD", "PAYONEER", "JAZZCASH", "GOOGLE_PLAY", "ADMIN_GRANT"] },
+        "paymentLabel": { "type": "string" },
+        "externalRef": { "type": "string" },
+        "postId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "fanName", "type", "tierName", "amountCents", "feeCents", "netEarningsCents", "status", "paymentMethod", "paymentLabel", "createdAt"]
+    },
+    "MembershipRequest": {
+      "title": "MembershipRequest",
+      "description": "Non-payment access or tier inquiry submitted by a fan while merchant payment gateways are pending approval.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "fanName": { "type": "string" },
+        "fanEmail": { "type": "string" },
+        "requestedTierId": { "type": "string" },
+        "requestedTierName": { "type": "string" },
+        "preferredProvider": { "type": "string", "enum": ["VISA_CARD", "PAYONEER", "JAZZCASH", "GOOGLE_PLAY"] },
+        "note": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "DECLINED"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "fanName", "fanEmail", "requestedTierId", "requestedTierName", "preferredProvider", "status", "createdAt"]
+    },
+    "ContentReport": {
+      "title": "ContentReport",
+      "description": "Member content report for creator moderation and policy compliance.",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string" },
+        "postTitle": { "type": "string" },
+        "reporterUid": { "type": "string" },
+        "reporterName": { "type": "string" },
+        "reason": { "type": "string", "enum": ["POLICY_VIOLATION", "COPYRIGHT", "HARASSMENT", "SPAM", "OTHER"] },
+        "details": { "type": "string" },
+        "status": { "type": "string", "enum": ["OPEN", "RESOLVED", "DISMISSED"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["postId", "postTitle", "reporterUid", "reporterName", "reason", "status", "createdAt", "updatedAt"]
+    },
+    "PaymentSettings": {
+      "title": "PaymentSettings",
+      "description": "Publicly readable gateway availability flags (no private API keys). Disabled until merchant approval.",
+      "type": "object",
+      "properties": {
+        "visaCheckoutEnabled": { "type": "boolean" },
+        "payoneerCheckoutEnabled": { "type": "boolean" },
+        "jazzcashGatewayEnabled": { "type": "boolean" },
+        "googlePlayBillingEnabled": { "type": "boolean" },
+        "payoneerEligibilityNote": { "type": "string" },
+        "jazzcashEligibilityNote": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["visaCheckoutEnabled", "payoneerCheckoutEnabled", "jazzcashGatewayEnabled", "googlePlayBillingEnabled", "payoneerEligibilityNote", "jazzcashEligibilityNote", "updatedAt"]
+    },
+    "PayoutConfig": {
+      "title": "PayoutConfig",
+      "description": "Private Maarya Admin settlement setup for receiving Payoneer USD earnings and withdrawing to Pakistani JazzCash.",
+      "type": "object",
+      "properties": {
+        "payoneerReceivingEmail": { "type": "string" },
+        "payoneerAccountType": { "type": "string" },
+        "payoneerBusinessApproved": { "type": "boolean" },
+        "jazzcashWalletNumber": { "type": "string" },
+        "jazzcashAccountTitle": { "type": "string" },
+        "jazzcashMerchantId": { "type": "string" },
+        "settlementSchedule": { "type": "string" },
+        "notes": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["payoneerReceivingEmail", "payoneerAccountType", "payoneerBusinessApproved", "jazzcashWalletNumber", "jazzcashAccountTitle", "settlementSchedule", "updatedAt"]
+    },
+    "WithdrawalRecord": {
+      "title": "WithdrawalRecord",
+      "description": "Maarya Admin withdrawal ledger tracking Payoneer-to-JazzCash settlements.",
+      "type": "object",
+      "properties": {
+        "channel": { "type": "string", "enum": ["PAYONEER_TO_JAZZCASH", "JAZZCASH_DIRECT"] },
+        "amountCents": { "type": "integer" },
+        "feeCents": { "type": "integer" },
+        "netPayoutCents": { "type": "integer" },
+        "destinationLabel": { "type": "string" },
+        "referenceCode": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "PROCESSING", "SETTLED"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["channel", "amountCents", "feeCents", "netPayoutCents", "destinationLabel", "status", "createdAt", "updatedAt"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "type": "object",
+      "properties": {
+        "fanUid": { "type": "string" },
+        "fanName": { "type": "string" },
+        "fanTierName": { "type": "string" },
+        "lastMessage": { "type": "string" },
+        "unreadByCreator": { "type": "integer" },
+        "unreadByFan": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fanUid", "fanName", "fanTierName", "lastMessage", "unreadByCreator", "unreadByFan", "createdAt", "updatedAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "type": "object",
+      "properties": {
+        "fanUid": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderRole": { "type": "string", "enum": ["FAN", "MAARYA"] },
+        "senderName": { "type": "string" },
+        "body": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fanUid", "senderId", "senderRole", "senderName", "body", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/creator_profile/{profileId}": { "schema": { "$ref": "#/entities/CreatorProfile" }, "description": "Maarya profile" },
+    "/membership_tiers/{tierId}": { "schema": { "$ref": "#/entities/MembershipTier" }, "description": "Tiers ($50, $100, $200, $500)" },
+    "/posts/{postId}": { "schema": { "$ref": "#/entities/CreatorPost" }, "description": "Post metadata & teasers" },
+    "/posts/{postId}/protected/{docId}": { "schema": { "$ref": "#/entities/ProtectedPostPayload" }, "description": "Tier-gated full content" },
+    "/posts/{postId}/likes/{userId}": { "schema": { "$ref": "#/entities/PostLike" }, "description": "Post likes" },
+    "/posts/{postId}/comments/{commentId}": { "schema": { "$ref": "#/entities/PostComment" }, "description": "Post comments" },
+    "/users/{userId}": { "schema": { "$ref": "#/entities/UserProfile" }, "description": "Member profiles" },
+    "/users/{userId}/unlocked_posts/{postId}": { "schema": { "$ref": "#/entities/UnlockedPost" }, "description": "Single unlocked drops" },
+    "/subscriptions/{userId}": { "schema": { "$ref": "#/entities/Subscription" }, "description": "Verified subscriptions" },
+    "/transactions/{txId}": { "schema": { "$ref": "#/entities/Transaction" }, "description": "Verified transactions" },
+    "/membership_requests/{reqId}": { "schema": { "$ref": "#/entities/MembershipRequest" }, "description": "Non-payment access requests" },
+    "/reports/{reportId}": { "schema": { "$ref": "#/entities/ContentReport" }, "description": "Moderation reports" },
+    "/payment_settings/{settingId}": { "schema": { "$ref": "#/entities/PaymentSettings" }, "description": "Gateway enablement status" },
+    "/payout_configs/{configId}": { "schema": { "$ref": "#/entities/PayoutConfig" }, "description": "Admin-only Payoneer/JazzCash config" },
+    "/withdrawals/{withdrawalId}": { "schema": { "$ref": "#/entities/WithdrawalRecord" }, "description": "Admin-only withdrawal ledger" },
+    "/conversations/{fanUid}": { "schema": { "$ref": "#/entities/Conversation" }, "description": "Direct VIP message threads" },
+    "/conversations/{fanUid}/messages/{messageId}": { "schema": { "$ref": "#/entities/ChatMessage" }, "description": "Direct messages" }
+  }
+}

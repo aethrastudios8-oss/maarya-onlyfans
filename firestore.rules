@@ -1,0 +1,559 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Default deny all reads and writes
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Shared Primitives ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Maarya Super Admin check: verified bootstrapped creator email OR trusted /admins/{uid} record
+    function isMaaryaAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.email_verified == true && request.auth.token.email == 'aethrastudios8@gmail.com') ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function hasActiveTierForPost(postId) {
+      return exists(/databases/$(database)/documents/posts/$(postId)) &&
+             exists(/databases/$(database)/documents/subscriptions/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/subscriptions/$(request.auth.uid)).data.status == 'ACTIVE' &&
+             get(/databases/$(database)/documents/subscriptions/$(request.auth.uid)).data.tierRank >=
+               get(/databases/$(database)/documents/posts/$(postId)).data.requiredTierRank;
+    }
+
+    function hasUnlockedSinglePost(postId) {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)/unlocked_posts/$(postId));
+    }
+
+    // --- Validation Helpers ---
+    function isValidCreatorProfile(data) {
+      return data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 60 &&
+             data.handle is string && data.handle == '@maarya' &&
+             data.tagline is string && data.tagline.size() >= 1 && data.tagline.size() <= 160 &&
+             data.bio is string && data.bio.size() >= 1 && data.bio.size() <= 1000 &&
+             data.location is string && data.location.size() >= 1 && data.location.size() <= 80 &&
+             data.verified is bool &&
+             data.subscriberCount is int && data.subscriberCount >= 0 &&
+             data.postCount is int && data.postCount >= 0 &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidMembershipTier(data) {
+      return data.creatorHandle is string && data.creatorHandle == '@maarya' &&
+             data.name is string && data.name.size() >= 2 && data.name.size() <= 40 &&
+             data.rank is int && data.rank >= 1 && data.rank <= 4 &&
+             data.priceMonthlyCents is int && data.priceMonthlyCents >= 100 && data.priceMonthlyCents <= 200000 &&
+             data.badgeLabel is string && data.badgeLabel.size() >= 1 && data.badgeLabel.size() <= 30 &&
+             data.description is string && data.description.size() >= 1 && data.description.size() <= 300 &&
+             data.perks is list && data.perks.size() <= 8 && (data.perks.size() == 0 || data.perks[0] is string) &&
+             data.active is bool &&
+             (!('playProductId' in data) || (data.playProductId is string && data.playProductId.size() <= 80)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidCreatorPost(data) {
+      return data.creatorHandle is string && data.creatorHandle == '@maarya' &&
+             data.authorId is string && data.authorId.size() >= 1 && data.authorId.size() <= 128 &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.caption is string && data.caption.size() >= 1 && data.caption.size() <= 2000 &&
+             data.mediaType in ['PHOTO', 'VIDEO', 'NOTE'] &&
+             data.mediaKey is string && data.mediaKey.size() <= 64 &&
+             (!('mediaUri' in data) || (data.mediaUri is string && data.mediaUri.size() <= 1000)) &&
+             data.requiredTierRank is int && data.requiredTierRank >= 1 && data.requiredTierRank <= 4 &&
+             data.requiredTierName is string && data.requiredTierName.size() >= 1 && data.requiredTierName.size() <= 40 &&
+             data.ppvPriceCents is int && data.ppvPriceCents >= 0 && data.ppvPriceCents <= 100000 &&
+             data.likesCount is int && data.likesCount >= 0 &&
+             data.commentsCount is int && data.commentsCount >= 0 &&
+             data.published is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidProtectedPostPayload(data, postId) {
+      return data.postId is string && data.postId == postId &&
+             data.requiredTierRank is int && data.requiredTierRank >= 1 && data.requiredTierRank <= 4 &&
+             data.fullCaption is string && data.fullCaption.size() >= 1 && data.fullCaption.size() <= 5000 &&
+             (!('privateMediaUrl' in data) || (data.privateMediaUrl is string && data.privateMediaUrl.size() <= 1000)) &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidComment(data) {
+      return data.postId is string && isValidId(data.postId) &&
+             data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 60 &&
+             data.authorTierBadge is string && data.authorTierBadge.size() >= 1 && data.authorTierBadge.size() <= 40 &&
+             data.body is string && data.body.size() >= 1 && data.body.size() <= 500 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+             data.email is string && data.email.size() >= 3 && data.email.size() <= 160 &&
+             (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 1000)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidSubscription(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.fanName is string && data.fanName.size() >= 1 && data.fanName.size() <= 80 &&
+             data.fanEmail is string && data.fanEmail.size() >= 3 && data.fanEmail.size() <= 160 &&
+             data.tierId is string && isValidId(data.tierId) &&
+             data.tierName is string && data.tierName.size() >= 1 && data.tierName.size() <= 40 &&
+             data.tierRank is int && data.tierRank >= 1 && data.tierRank <= 4 &&
+             data.monthlyPriceCents is int && data.monthlyPriceCents >= 100 && data.monthlyPriceCents <= 200000 &&
+             data.status in ['ACTIVE', 'CANCELLED', 'PAUSED'] &&
+             data.autoRenew is bool &&
+             data.renewsAtLabel is string && data.renewsAtLabel.size() >= 1 && data.renewsAtLabel.size() <= 60 &&
+             data.paymentMethod in ['VISA_CARD', 'PAYONEER', 'JAZZCASH', 'GOOGLE_PLAY', 'ADMIN_GRANT'] &&
+             data.paymentLabel is string && data.paymentLabel.size() >= 3 && data.paymentLabel.size() <= 80 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidTransaction(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.fanName is string && data.fanName.size() >= 1 && data.fanName.size() <= 80 &&
+             data.type in ['SUBSCRIPTION', 'UPGRADE', 'TIP', 'UNLOCK'] &&
+             data.tierName is string && data.tierName.size() >= 1 && data.tierName.size() <= 40 &&
+             data.amountCents is int && data.amountCents > 0 && data.amountCents <= 200000 &&
+             data.feeCents is int && data.feeCents >= 0 && data.feeCents <= data.amountCents &&
+             data.netEarningsCents is int && data.netEarningsCents >= 0 && data.netEarningsCents <= data.amountCents &&
+             data.status in ['SUCCEEDED', 'PENDING_VERIFICATION', 'REFUNDED'] &&
+             data.paymentMethod in ['VISA_CARD', 'PAYONEER', 'JAZZCASH', 'GOOGLE_PLAY', 'ADMIN_GRANT'] &&
+             data.paymentLabel is string && data.paymentLabel.size() >= 3 && data.paymentLabel.size() <= 80 &&
+             (!('externalRef' in data) || (data.externalRef is string && data.externalRef.size() <= 128)) &&
+             (!('postId' in data) || (data.postId is string && isValidId(data.postId))) &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidMembershipRequest(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.fanName is string && data.fanName.size() >= 1 && data.fanName.size() <= 80 &&
+             data.fanEmail is string && data.fanEmail.size() >= 3 && data.fanEmail.size() <= 160 &&
+             data.requestedTierId is string && isValidId(data.requestedTierId) &&
+             data.requestedTierName is string && data.requestedTierName.size() >= 1 && data.requestedTierName.size() <= 40 &&
+             data.preferredProvider in ['VISA_CARD', 'PAYONEER', 'JAZZCASH', 'GOOGLE_PLAY'] &&
+             (!('note' in data) || (data.note is string && data.note.size() <= 300)) &&
+             data.status in ['PENDING', 'APPROVED', 'DECLINED'] &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidContentReport(data) {
+      return data.postId is string && isValidId(data.postId) &&
+             data.postTitle is string && data.postTitle.size() >= 1 && data.postTitle.size() <= 120 &&
+             data.reporterUid is string && data.reporterUid.size() >= 1 && data.reporterUid.size() <= 128 &&
+             data.reporterName is string && data.reporterName.size() >= 1 && data.reporterName.size() <= 80 &&
+             data.reason in ['POLICY_VIOLATION', 'COPYRIGHT', 'HARASSMENT', 'SPAM', 'OTHER'] &&
+             (!('details' in data) || (data.details is string && data.details.size() <= 500)) &&
+             data.status in ['OPEN', 'RESOLVED', 'DISMISSED'] &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidPaymentSettings(data) {
+      return data.visaCheckoutEnabled is bool &&
+             data.payoneerCheckoutEnabled is bool &&
+             data.jazzcashGatewayEnabled is bool &&
+             data.googlePlayBillingEnabled is bool &&
+             data.payoneerEligibilityNote is string && data.payoneerEligibilityNote.size() >= 1 && data.payoneerEligibilityNote.size() <= 300 &&
+             data.jazzcashEligibilityNote is string && data.jazzcashEligibilityNote.size() >= 1 && data.jazzcashEligibilityNote.size() <= 300 &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidPayoutConfig(data) {
+      return data.payoneerReceivingEmail is string && data.payoneerReceivingEmail.size() <= 160 &&
+             data.payoneerAccountType is string && data.payoneerAccountType.size() >= 1 && data.payoneerAccountType.size() <= 80 &&
+             data.payoneerBusinessApproved is bool &&
+             data.jazzcashWalletNumber is string && data.jazzcashWalletNumber.size() <= 40 &&
+             data.jazzcashAccountTitle is string && data.jazzcashAccountTitle.size() <= 80 &&
+             (!('jazzcashMerchantId' in data) || (data.jazzcashMerchantId is string && data.jazzcashMerchantId.size() <= 60)) &&
+             data.settlementSchedule is string && data.settlementSchedule.size() >= 1 && data.settlementSchedule.size() <= 60 &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 400)) &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidWithdrawal(data) {
+      return data.channel in ['PAYONEER_TO_JAZZCASH', 'JAZZCASH_DIRECT'] &&
+             data.amountCents is int && data.amountCents >= 100 && data.amountCents <= 10000000 &&
+             data.feeCents is int && data.feeCents >= 0 && data.feeCents <= data.amountCents &&
+             data.netPayoutCents is int && data.netPayoutCents >= 0 && data.netPayoutCents <= data.amountCents &&
+             data.destinationLabel is string && data.destinationLabel.size() >= 3 && data.destinationLabel.size() <= 120 &&
+             (!('referenceCode' in data) || (data.referenceCode is string && data.referenceCode.size() <= 80)) &&
+             data.status in ['PENDING', 'PROCESSING', 'SETTLED'] &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidConversation(data) {
+      return data.fanUid is string && data.fanUid.size() >= 1 && data.fanUid.size() <= 128 &&
+             data.fanName is string && data.fanName.size() >= 1 && data.fanName.size() <= 80 &&
+             data.fanTierName is string && data.fanTierName.size() >= 1 && data.fanTierName.size() <= 40 &&
+             data.lastMessage is string && data.lastMessage.size() >= 1 && data.lastMessage.size() <= 500 &&
+             data.unreadByCreator is int && data.unreadByCreator >= 0 &&
+             data.unreadByFan is int && data.unreadByFan >= 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidChatMessage(data) {
+      return data.fanUid is string && data.fanUid.size() >= 1 && data.fanUid.size() <= 128 &&
+             data.senderId is string && data.senderId.size() >= 1 && data.senderId.size() <= 128 &&
+             data.senderRole in ['FAN', 'MAARYA'] &&
+             data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 80 &&
+             data.body is string && data.body.size() >= 1 && data.body.size() <= 1000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    // --- Collection Rules ---
+
+    // Trusted Admin Registry (read-only self-check, never client-writable)
+    match /admins/{adminId} {
+      allow get: if isSignedIn() && request.auth.uid == adminId;
+      allow list, write: if false;
+    }
+
+    // Maarya's Official Single-Creator Profile
+    match /creator_profile/{profileId} {
+      allow get: if isSignedIn() && isValidId(profileId) && profileId == 'maarya';
+      allow list: if false;
+      allow create, update: if isMaaryaAdmin() &&
+                               isValidId(profileId) &&
+                               profileId == 'maarya' &&
+                               incoming().keys().hasAll(['displayName', 'handle', 'tagline', 'bio', 'location', 'verified', 'subscriberCount', 'postCount', 'updatedAt']) &&
+                               incoming().keys().hasOnly(['displayName', 'handle', 'tagline', 'bio', 'location', 'verified', 'subscriberCount', 'postCount', 'updatedAt']) &&
+                               isValidCreatorProfile(incoming());
+      allow delete: if false;
+    }
+
+    // Maarya's Four Paid Membership Tiers ($10, $50, $200, $500)
+    match /membership_tiers/{tierId} {
+      allow get: if isSignedIn() && isValidId(tierId);
+      allow list: if isSignedIn() && resource.data.creatorHandle == '@maarya';
+      allow create: if isMaaryaAdmin() &&
+                       isValidId(tierId) &&
+                       incoming().keys().hasAll(['creatorHandle', 'name', 'rank', 'priceMonthlyCents', 'badgeLabel', 'description', 'perks', 'active', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['creatorHandle', 'name', 'rank', 'priceMonthlyCents', 'badgeLabel', 'description', 'perks', 'active', 'playProductId', 'createdAt', 'updatedAt']) &&
+                       isValidMembershipTier(incoming());
+      allow update: if isMaaryaAdmin() &&
+                       isValidId(tierId) &&
+                       isValidMembershipTier(incoming()) &&
+                       incoming().creatorHandle == existing().creatorHandle &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['name', 'rank', 'priceMonthlyCents', 'badgeLabel', 'description', 'perks', 'active', 'playProductId', 'updatedAt']);
+      allow delete: if isMaaryaAdmin() && isValidId(tierId);
+    }
+
+    // Maarya's Exclusive Content Posts (Teasers & Metadata)
+    match /posts/{postId} {
+      allow get: if isSignedIn() && isValidId(postId) && (existing().published == true || isMaaryaAdmin());
+      allow list: if isSignedIn() && (
+        (resource.data.creatorHandle == '@maarya' && resource.data.published == true) ||
+        isMaaryaAdmin()
+      );
+      allow create: if isMaaryaAdmin() &&
+                       isValidId(postId) &&
+                       incoming().authorId == request.auth.uid &&
+                       incoming().likesCount == 0 &&
+                       incoming().commentsCount == 0 &&
+                       incoming().keys().hasAll(['creatorHandle', 'authorId', 'title', 'caption', 'mediaType', 'mediaKey', 'requiredTierRank', 'requiredTierName', 'ppvPriceCents', 'likesCount', 'commentsCount', 'published', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['creatorHandle', 'authorId', 'title', 'caption', 'mediaType', 'mediaKey', 'mediaUri', 'requiredTierRank', 'requiredTierName', 'ppvPriceCents', 'likesCount', 'commentsCount', 'published', 'createdAt', 'updatedAt']) &&
+                       isValidCreatorPost(incoming());
+      allow update: if isSignedIn() &&
+                       isValidId(postId) &&
+                       isValidCreatorPost(incoming()) &&
+                       incoming().creatorHandle == existing().creatorHandle &&
+                       incoming().authorId == existing().authorId &&
+                       incoming().createdAt == existing().createdAt && (
+                         (isMaaryaAdmin() &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['title', 'caption', 'mediaType', 'mediaKey', 'mediaUri', 'requiredTierRank', 'requiredTierName', 'ppvPriceCents', 'published', 'updatedAt'])) ||
+                         (existing().published == true &&
+                           (incoming().likesCount == existing().likesCount + 1 || (existing().likesCount > 0 && incoming().likesCount == existing().likesCount - 1)) &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['likesCount', 'updatedAt'])) ||
+                         (existing().published == true &&
+                           incoming().commentsCount == existing().commentsCount + 1 &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['commentsCount', 'updatedAt']))
+                       );
+      allow delete: if isMaaryaAdmin() && isValidId(postId);
+
+      // Private Subscriber-Gated Post Content (server-side tier & PPV check)
+      match /protected/{docId} {
+        allow get: if isSignedIn() &&
+                      isValidId(postId) &&
+                      docId == 'payload' && (
+                        isMaaryaAdmin() ||
+                        hasActiveTierForPost(postId) ||
+                        hasUnlockedSinglePost(postId)
+                      );
+        allow list: if false;
+        allow create, update: if isMaaryaAdmin() &&
+                                 isValidId(postId) &&
+                                 docId == 'payload' &&
+                                 incoming().keys().hasAll(['postId', 'requiredTierRank', 'fullCaption', 'updatedAt']) &&
+                                 incoming().keys().hasOnly(['postId', 'requiredTierRank', 'fullCaption', 'privateMediaUrl', 'updatedAt']) &&
+                                 isValidProtectedPostPayload(incoming(), postId);
+        allow delete: if isMaaryaAdmin() && isValidId(postId);
+      }
+
+      // Post Likes
+      match /likes/{userId} {
+        allow get: if isSignedIn() && isValidId(postId) && isValidId(userId) && request.auth.uid == userId;
+        allow list: if isSignedIn() && isValidId(postId) && resource.data.userId == request.auth.uid;
+        allow create: if isSignedIn() &&
+                         isValidId(postId) &&
+                         isValidId(userId) &&
+                         request.auth.uid == userId &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         incoming().keys().hasAll(['userId', 'createdAt']) &&
+                         incoming().keys().hasOnly(['userId', 'createdAt']) &&
+                         exists(/databases/$(database)/documents/posts/$(postId));
+        allow update: if false;
+        allow delete: if isSignedIn() && isValidId(postId) && isValidId(userId) && request.auth.uid == userId;
+      }
+
+      // Post Comments
+      match /comments/{commentId} {
+        allow get: if isSignedIn() && isValidId(postId) && isValidId(commentId);
+        allow list: if isSignedIn() && isValidId(postId) && resource.data.postId == postId;
+        allow create: if isSignedIn() &&
+                         isValidId(postId) &&
+                         isValidId(commentId) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().postId == postId &&
+                         incoming().keys().hasAll(['postId', 'userId', 'authorName', 'authorTierBadge', 'body', 'createdAt']) &&
+                         incoming().keys().hasOnly(['postId', 'userId', 'authorName', 'authorTierBadge', 'body', 'createdAt']) &&
+                         isValidComment(incoming()) &&
+                         exists(/databases/$(database)/documents/posts/$(postId));
+        allow update: if false;
+        allow delete: if isValidId(postId) && isValidId(commentId) && (isMaaryaAdmin() || (isSignedIn() && existing().userId == request.auth.uid));
+      }
+    }
+
+    // Fan Account Profiles (PII protected: owner or Maarya Admin only)
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isMaaryaAdmin());
+      allow list: if isMaaryaAdmin();
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'email', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'email', 'photoUrl', 'createdAt', 'updatedAt']) &&
+                       isValidUserProfile(incoming());
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().email == existing().email &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoUrl', 'updatedAt']);
+      allow delete: if isValidId(userId) && (isMaaryaAdmin() || (isSignedIn() && request.auth.uid == userId));
+
+      // Per-fan unlocked single drops (ONLY written by verified server webhook / Maarya Admin — NO client fake unlocks)
+      match /unlocked_posts/{postId} {
+        allow get, list: if isSignedIn() && (request.auth.uid == userId || isMaaryaAdmin());
+        allow create: if isMaaryaAdmin() &&
+                         isValidId(userId) &&
+                         isValidId(postId) &&
+                         incoming().userId == userId &&
+                         incoming().postId == postId &&
+                         incoming().amountCents is int && incoming().amountCents >= 0 &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         incoming().keys().hasAll(['userId', 'postId', 'amountCents', 'createdAt']) &&
+                         incoming().keys().hasOnly(['userId', 'postId', 'amountCents', 'createdAt']) &&
+                         exists(/databases/$(database)/documents/posts/$(postId));
+        allow update, delete: if isMaaryaAdmin();
+      }
+    }
+
+    // Fan Subscriptions to Maarya (NO client self-upgrade / fake paid activation; fans can only pause or cancel)
+    match /subscriptions/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isMaaryaAdmin());
+      allow list: if isMaaryaAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isMaaryaAdmin() &&
+                       isValidId(userId) &&
+                       incoming().userId == userId &&
+                       incoming().keys().hasAll(['userId', 'fanName', 'fanEmail', 'tierId', 'tierName', 'tierRank', 'monthlyPriceCents', 'status', 'autoRenew', 'renewsAtLabel', 'paymentMethod', 'paymentLabel', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'fanName', 'fanEmail', 'tierId', 'tierName', 'tierRank', 'monthlyPriceCents', 'status', 'autoRenew', 'renewsAtLabel', 'paymentMethod', 'paymentLabel', 'createdAt', 'updatedAt']) &&
+                       isValidSubscription(incoming());
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       isValidSubscription(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt && (
+                         isMaaryaAdmin() ||
+                         (request.auth.uid == userId &&
+                           incoming().tierId == existing().tierId &&
+                           incoming().tierRank == existing().tierRank &&
+                           incoming().monthlyPriceCents == existing().monthlyPriceCents &&
+                           incoming().paymentMethod == existing().paymentMethod &&
+                           incoming().status in ['PAUSED', 'CANCELLED'] &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'autoRenew', 'renewsAtLabel', 'updatedAt']))
+                       );
+      allow delete: if isMaaryaAdmin() && isValidId(userId);
+    }
+
+    // Verified Transaction Ledger (NO fake client writes; created via server webhook / Admin SDK / Maarya Admin)
+    match /transactions/{txId} {
+      allow get: if isSignedIn() && isValidId(txId) && (existing().userId == request.auth.uid || isMaaryaAdmin());
+      allow list: if isMaaryaAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isMaaryaAdmin() &&
+                       isValidId(txId) &&
+                       incoming().keys().hasAll(['userId', 'fanName', 'type', 'tierName', 'amountCents', 'feeCents', 'netEarningsCents', 'status', 'paymentMethod', 'paymentLabel', 'createdAt']) &&
+                       incoming().keys().hasOnly(['userId', 'fanName', 'type', 'tierName', 'amountCents', 'feeCents', 'netEarningsCents', 'status', 'paymentMethod', 'paymentLabel', 'externalRef', 'postId', 'createdAt']) &&
+                       isValidTransaction(incoming());
+      allow update: if isMaaryaAdmin() &&
+                       isValidId(txId) &&
+                       isValidTransaction(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status']);
+      allow delete: if false;
+    }
+
+    // Non-Payment Fan Membership Access Requests (used while merchant APIs are disabled)
+    match /membership_requests/{reqId} {
+      allow get: if isSignedIn() && isValidId(reqId) && (existing().userId == request.auth.uid || isMaaryaAdmin());
+      allow list: if isMaaryaAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() &&
+                       isValidId(reqId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().status == 'PENDING' &&
+                       incoming().keys().hasAll(['userId', 'fanName', 'fanEmail', 'requestedTierId', 'requestedTierName', 'preferredProvider', 'status', 'createdAt']) &&
+                       incoming().keys().hasOnly(['userId', 'fanName', 'fanEmail', 'requestedTierId', 'requestedTierName', 'preferredProvider', 'note', 'status', 'createdAt']) &&
+                       isValidMembershipRequest(incoming());
+      allow update: if isMaaryaAdmin() &&
+                       isValidId(reqId) &&
+                       isValidMembershipRequest(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status']);
+      allow delete: if isMaaryaAdmin() && isValidId(reqId);
+    }
+
+    // Content Moderation Reports
+    match /reports/{reportId} {
+      allow get: if isSignedIn() && isValidId(reportId) && (existing().reporterUid == request.auth.uid || isMaaryaAdmin());
+      allow list: if isMaaryaAdmin() || (isSignedIn() && resource.data.reporterUid == request.auth.uid);
+      allow create: if isSignedIn() &&
+                       isValidId(reportId) &&
+                       incoming().reporterUid == request.auth.uid &&
+                       incoming().status == 'OPEN' &&
+                       incoming().keys().hasAll(['postId', 'postTitle', 'reporterUid', 'reporterName', 'reason', 'status', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['postId', 'postTitle', 'reporterUid', 'reporterName', 'reason', 'details', 'status', 'createdAt', 'updatedAt']) &&
+                       isValidContentReport(incoming()) &&
+                       exists(/databases/$(database)/documents/posts/$(incoming().postId));
+      allow update: if isMaaryaAdmin() &&
+                       isValidId(reportId) &&
+                       isValidContentReport(incoming()) &&
+                       incoming().reporterUid == existing().reporterUid &&
+                       incoming().postId == existing().postId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+      allow delete: if isMaaryaAdmin() && isValidId(reportId);
+    }
+
+    // Public Gateway Readiness Flags (NO merchant secrets; disabled until merchant approval)
+    match /payment_settings/{settingId} {
+      allow get: if isSignedIn() && isValidId(settingId) && settingId == 'maarya';
+      allow list: if false;
+      allow create, update: if isMaaryaAdmin() &&
+                               isValidId(settingId) &&
+                               settingId == 'maarya' &&
+                               incoming().keys().hasAll(['visaCheckoutEnabled', 'payoneerCheckoutEnabled', 'jazzcashGatewayEnabled', 'googlePlayBillingEnabled', 'payoneerEligibilityNote', 'jazzcashEligibilityNote', 'updatedAt']) &&
+                               incoming().keys().hasOnly(['visaCheckoutEnabled', 'payoneerCheckoutEnabled', 'jazzcashGatewayEnabled', 'googlePlayBillingEnabled', 'payoneerEligibilityNote', 'jazzcashEligibilityNote', 'updatedAt']) &&
+                               isValidPaymentSettings(incoming());
+      allow delete: if false;
+    }
+
+    // Maarya Admin-Only Pakistan Payoneer -> JazzCash Settlement Configuration
+    match /payout_configs/{configId} {
+      allow get: if isMaaryaAdmin() && isValidId(configId) && configId == 'maarya';
+      allow list: if false;
+      allow create, update: if isMaaryaAdmin() &&
+                               isValidId(configId) &&
+                               configId == 'maarya' &&
+                               incoming().keys().hasAll(['payoneerReceivingEmail', 'payoneerAccountType', 'payoneerBusinessApproved', 'jazzcashWalletNumber', 'jazzcashAccountTitle', 'settlementSchedule', 'updatedAt']) &&
+                               incoming().keys().hasOnly(['payoneerReceivingEmail', 'payoneerAccountType', 'payoneerBusinessApproved', 'jazzcashWalletNumber', 'jazzcashAccountTitle', 'jazzcashMerchantId', 'settlementSchedule', 'notes', 'updatedAt']) &&
+                               isValidPayoutConfig(incoming());
+      allow delete: if false;
+    }
+
+    // Maarya Admin-Only Withdrawals & Settlement Batches
+    match /withdrawals/{withdrawalId} {
+      allow get, list: if isMaaryaAdmin();
+      allow create: if isMaaryaAdmin() &&
+                       isValidId(withdrawalId) &&
+                       incoming().keys().hasAll(['channel', 'amountCents', 'feeCents', 'netPayoutCents', 'destinationLabel', 'status', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['channel', 'amountCents', 'feeCents', 'netPayoutCents', 'destinationLabel', 'referenceCode', 'status', 'createdAt', 'updatedAt']) &&
+                       isValidWithdrawal(incoming());
+      allow update: if isMaaryaAdmin() &&
+                       isValidId(withdrawalId) &&
+                       isValidWithdrawal(incoming()) &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'referenceCode', 'updatedAt']);
+      allow delete: if isMaaryaAdmin() && isValidId(withdrawalId);
+    }
+
+    // 1-on-1 Direct VIP Conversations (Fan <-> Maarya)
+    match /conversations/{fanUid} {
+      allow get: if isSignedIn() && isValidId(fanUid) && (request.auth.uid == fanUid || isMaaryaAdmin());
+      allow list: if isMaaryaAdmin() || (isSignedIn() && resource.data.fanUid == request.auth.uid);
+      allow create: if isSignedIn() &&
+                       isValidId(fanUid) &&
+                       (request.auth.uid == fanUid || isMaaryaAdmin()) &&
+                       incoming().fanUid == fanUid &&
+                       incoming().keys().hasAll(['fanUid', 'fanName', 'fanTierName', 'lastMessage', 'unreadByCreator', 'unreadByFan', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['fanUid', 'fanName', 'fanTierName', 'lastMessage', 'unreadByCreator', 'unreadByFan', 'createdAt', 'updatedAt']) &&
+                       isValidConversation(incoming());
+      allow update: if isSignedIn() &&
+                       isValidId(fanUid) &&
+                       (request.auth.uid == fanUid || isMaaryaAdmin()) &&
+                       isValidConversation(incoming()) &&
+                       incoming().fanUid == existing().fanUid &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['fanName', 'fanTierName', 'lastMessage', 'unreadByCreator', 'unreadByFan', 'updatedAt']);
+      allow delete: if isMaaryaAdmin() && isValidId(fanUid);
+
+      match /messages/{messageId} {
+        allow get, list: if isSignedIn() && isValidId(fanUid) && (request.auth.uid == fanUid || isMaaryaAdmin());
+        allow create: if isSignedIn() &&
+                         isValidId(fanUid) &&
+                         isValidId(messageId) &&
+                         (request.auth.uid == fanUid || isMaaryaAdmin()) &&
+                         incoming().fanUid == fanUid &&
+                         incoming().senderId == request.auth.uid &&
+                         ((isMaaryaAdmin() && incoming().senderRole == 'MAARYA') || (!isMaaryaAdmin() && incoming().senderRole == 'FAN')) &&
+                         incoming().keys().hasAll(['fanUid', 'senderId', 'senderRole', 'senderName', 'body', 'createdAt']) &&
+                         incoming().keys().hasOnly(['fanUid', 'senderId', 'senderRole', 'senderName', 'body', 'createdAt']) &&
+                         isValidChatMessage(incoming()) &&
+                         exists(/databases/$(database)/documents/conversations/$(fanUid));
+        allow update, delete: if isMaaryaAdmin() && isValidId(fanUid) && isValidId(messageId);
+      }
+    }
+  }
+}
